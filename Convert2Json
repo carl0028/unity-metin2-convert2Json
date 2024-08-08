@@ -1,0 +1,474 @@
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+using SFB;
+using UnityEngine.UI;
+using System.IO;
+using System;
+[System.Serializable]
+public struct Particle
+{
+    public float startTime;
+    public SerializableDictionary<float, Vector3> timeEventPosition;
+
+    public int maxEmissionCount;
+
+    public float cycleLength;
+    public int cycleLoopEnable;
+    public int loopCount;
+
+    public int emitterShape;
+    public int emitterEmitFromEdgeFlag;
+    public float emittingRadius;
+    public Vector3 emittingSize;
+
+    public SerializableDictionary<float, float> timeEventEmittingSize;
+    public SerializableDictionary<float, float> timeEventEmittingAngularVelocity;
+    public SerializableDictionary<float, float> timeEventEmittingDirectionX;
+    public SerializableDictionary<float, float> timeEventEmittingDirectionY;
+    public SerializableDictionary<float, float> timeEventEmittingDirectionZ;
+    public SerializableDictionary<float, float> timeEventEmittingVelocity;
+    public SerializableDictionary<float, float> timeEventEmissionCountPerSecond;
+    public SerializableDictionary<float, float> timeEventLifeTime;
+    public SerializableDictionary<float, float> timeEventScaleX;
+    public SerializableDictionary<float, float> timeEventScaleY;
+
+    public int billboardType;
+    public int rotationType;
+    public float rotationSpeed;
+
+    public SerializableDictionary<float, float> timeEventSizeX;
+    public SerializableDictionary<float, float> timeEventSizeY;
+    public SerializableDictionary<float, float> timeEventColorRed;
+    public SerializableDictionary<float, float> timeEventColorGreen;
+    public SerializableDictionary<float, float> timeEventColorBlue;
+    public SerializableDictionary<float, float> timeEventAlpha;
+    public SerializableDictionary<float, float> timeEventRotation;
+    public string textureFiles;
+}
+[System.Serializable]
+public struct PlayerData
+{
+    public float boundingSphereRadius;
+    public Vector3 boundingSpherePosition;
+    public List<Particle> particles;
+}
+public class Convert2Json : MonoBehaviour
+{
+    public Button btn_quit, btn_open, btn_save;
+    public Text tt_json, tt_url, tt_warning;
+    public RawImage ri_black;
+
+    public Animator anim_warning;
+
+    string str_json = string.Empty;
+    // Start is called before the first frame update
+    void Start()
+    {
+        btn_quit.onClick.AddListener(Quit);
+        btn_open.onClick.AddListener(Open);
+        btn_save.onClick.AddListener(Save);
+    }
+    void Quit()
+    {
+#if UNITY_EDITOR
+        UnityEditor.EditorApplication.isPlaying = false;
+#else
+    Application.Quit();
+#endif
+    }
+    void Open()
+    {
+        var extensions = new[] {
+            new ExtensionFilter("mse Files", "mse"),
+            new ExtensionFilter("All Files", "*" ),
+        };
+        StandaloneFileBrowser.OpenFilePanelAsync("Open Mse File", Application.dataPath, extensions, false, (string[] paths) =>
+        {
+            if (paths.Length != 0 && File.Exists(paths[0]))
+            {
+                tt_url.text = paths[0];
+                Parse(paths[0]);
+            }
+        });
+    }
+
+    void Save()
+    {
+        if (str_json == string.Empty)
+        {
+            ri_black.enabled = true;
+            StartCoroutine(Wait());
+            tt_warning.text = "Please open mse!";
+            anim_warning.enabled = true;
+            anim_warning.Play("warning");
+            return;
+        }
+        else
+        {
+            var extensions = new[] {
+            new ExtensionFilter("json Files", "json"),
+            new ExtensionFilter("All Files", "*" ),
+        };
+            StandaloneFileBrowser.SaveFilePanelAsync("Save Json File", "", "", extensions, (string path) =>
+            {
+                if (path == string.Empty)
+                {
+                    return;
+                }
+                else
+                    File.WriteAllText(path, str_json);
+            });
+        }
+    }
+    IEnumerator Wait()
+    {
+        yield return new WaitForSeconds(1.5f);
+        ri_black.enabled = false;
+    }
+
+    void Parse(string path)
+    {
+        PlayerData player = new PlayerData();
+        player.particles = new List<Particle>();
+        StreamReader sr = File.OpenText(path);
+        string line;
+        while ((line = sr.ReadLine()) != null)
+        {
+            if (line.StartsWith("BoundingSphereRadius"))
+            {
+                string[] split = line.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                player.boundingSphereRadius = float.Parse(split[1]);
+            }
+            else if (line.StartsWith("BoundingSpherePosition"))
+            {
+                string[] split = line.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                player.boundingSpherePosition = new Vector3(float.Parse(split[1]), float.Parse(split[3]), float.Parse(split[2]));
+            }
+            if (line.StartsWith("Group Particle"))
+            {
+                player.particles.Add(ParseParticleProperties(sr));
+            }
+        }
+        str_json = JsonUtility.ToJson(player);
+        tt_json.text = str_json;
+    }
+
+    Particle ParseParticleProperties(StreamReader sr)
+    {
+        Particle particle = new Particle();
+        string line;
+
+        while ((line = sr.ReadLine()) != null && !line.StartsWith("}"))
+        {
+            // start picking
+            if (line.Contains("StartTime"))
+            {
+                string[] split = line.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                particle.startTime = float.Parse(split[1]);
+            }
+            else if (line.Contains("MOVING_TYPE_DIRECT"))
+            {
+                string[] split = line.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                particle.timeEventPosition = new SerializableDictionary<float, Vector3>();
+                particle.timeEventPosition.ToDictionary().Add(float.Parse(split[0]), new Vector3(float.Parse(split[2]), float.Parse(split[4]), float.Parse(split[3])));
+            }
+
+            #region for EmitterProperty
+            else if (line.Contains("MaxEmissionCount"))
+            {
+                string[] split = line.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                particle.maxEmissionCount = int.Parse(split[1]);
+            }
+
+            else if (line.Contains("CycleLength"))
+            {
+                string[] split = line.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                particle.cycleLength = float.Parse(split[1]);
+            }
+            else if (line.Contains("CycleLoopEnable"))
+            {
+                string[] split = line.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                particle.cycleLoopEnable = int.Parse(split[1]);
+            }
+            else if (line.Contains("LoopCount"))
+            {
+                string[] split = line.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                particle.loopCount = int.Parse(split[1]);
+            }
+
+            else if (line.Contains("EmitterShape"))
+            {
+                string[] split = line.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                particle.emitterShape = int.Parse(split[1]);
+            }
+            else if (line.Contains("EmitterEmitFromEdgeFlag"))
+            {
+                string[] split = line.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                particle.emitterEmitFromEdgeFlag = int.Parse(split[1]);
+            }
+
+            else if (line.Contains("TimeEventEmittingSize"))
+            {
+                string _line = sr.ReadLine();
+            J00001: _line = sr.ReadLine();
+
+                if (!_line.Contains("}"))
+                {
+                    string[] split = _line.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                    particle.timeEventEmittingSize = new SerializableDictionary<float, float>();
+                    particle.timeEventEmittingSize.ToDictionary().Add(float.Parse(split[0]), float.Parse(split[1]));
+                    goto J00001;
+                }
+            }
+            else if (line.Contains("TimeEventEmittingAngularVelocity"))
+            {
+                string _line = sr.ReadLine();
+            J00002: _line = sr.ReadLine();
+
+                if (!_line.Contains("}"))
+                {
+                    string[] split = _line.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                    particle.timeEventEmittingAngularVelocity = new SerializableDictionary<float, float>();
+                    particle.timeEventEmittingAngularVelocity.ToDictionary().Add(float.Parse(split[0]), float.Parse(split[1]));
+                    goto J00002;
+                }
+            }
+            else if (line.Contains("TimeEventEmittingDirectionX"))
+            {
+                string _line = sr.ReadLine();
+            J00003: _line = sr.ReadLine();
+
+                if (!_line.Contains("}"))
+                {
+                    string[] split = _line.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                    particle.timeEventEmittingDirectionX = new SerializableDictionary<float, float>();
+                    particle.timeEventEmittingDirectionX.ToDictionary().Add(float.Parse(split[0]), float.Parse(split[1]));
+                    goto J00003;
+                }
+            }
+            else if (line.Contains("TimeEventEmittingDirectionY"))
+            {
+                string _line = sr.ReadLine();
+            J00004: _line = sr.ReadLine();
+
+                if (!_line.Contains("}"))
+                {
+                    string[] split = _line.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                    particle.timeEventEmittingDirectionY = new SerializableDictionary<float, float>();
+                    particle.timeEventEmittingDirectionY.ToDictionary().Add(float.Parse(split[0]), float.Parse(split[1]));
+                    goto J00004;
+                }
+            }
+            else if (line.Contains("TimeEventEmittingDirectionZ"))
+            {
+                string _line = sr.ReadLine();
+            J00005: _line = sr.ReadLine();
+
+                if (!_line.Contains("}"))
+                {
+                    string[] split = _line.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                    particle.timeEventEmittingDirectionZ = new SerializableDictionary<float, float>();
+                    particle.timeEventEmittingDirectionZ.ToDictionary().Add(float.Parse(split[0]), float.Parse(split[1]));
+                    goto J00005;
+                }
+            }
+            else if (line.Contains("TimeEventEmittingVelocity"))
+            {
+                string _line = sr.ReadLine();
+            J00006: _line = sr.ReadLine();
+
+                if (!_line.Contains("}"))
+                {
+                    string[] split = _line.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                    particle.timeEventEmittingVelocity = new SerializableDictionary<float, float>();
+                    particle.timeEventEmittingVelocity.ToDictionary().Add(float.Parse(split[0]), float.Parse(split[1]));
+                    goto J00006;
+                }
+            }
+            else if (line.Contains("TimeEventEmissionCountPerSecond"))
+            {
+                string _line = sr.ReadLine();
+            J00007: _line = sr.ReadLine();
+
+                if (!_line.Contains("}"))
+                {
+                    string[] split = _line.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                    particle.timeEventEmissionCountPerSecond = new SerializableDictionary<float, float>();
+                    particle.timeEventEmissionCountPerSecond.ToDictionary().Add(float.Parse(split[0]), float.Parse(split[1]));
+                    goto J00007;
+                }
+            }
+            else if (line.Contains("TimeEventLifeTime"))
+            {
+                string _line = sr.ReadLine();
+            J00008: _line = sr.ReadLine();
+
+                if (!_line.Contains("}"))
+                {
+                    string[] split = _line.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                    particle.timeEventLifeTime = new SerializableDictionary<float, float>();
+                    particle.timeEventLifeTime.ToDictionary().Add(float.Parse(split[0]), float.Parse(split[1]));
+                    goto J00008;
+                }
+            }
+            else if (line.Contains("TimeEventSizeX"))
+            {
+                string _line = sr.ReadLine();
+            J00016: _line = sr.ReadLine();
+
+                if (!_line.Contains("}"))
+                {
+                    string[] split = _line.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                    particle.timeEventSizeX = new SerializableDictionary<float, float>();
+                    particle.timeEventSizeX.ToDictionary().Add(float.Parse(split[0]), float.Parse(split[1]));
+                    goto J00016;
+                }
+            }
+            else if (line.Contains("TimeEventSizeY"))
+            {
+                string _line = sr.ReadLine();
+            J00017: _line = sr.ReadLine();
+
+                if (!_line.Contains("}"))
+                {
+                    string[] split = _line.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                    particle.timeEventSizeY = new SerializableDictionary<float, float>();
+                    particle.timeEventSizeY.ToDictionary().Add(float.Parse(split[0]), float.Parse(split[1]));
+                    goto J00017;
+                }
+            }
+            #endregion
+
+            #region for ParticleProperty
+            else if (line.Contains("BillboardType"))
+            {
+                string[] split = line.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                particle.billboardType = int.Parse(split[1]);
+            }
+            else if (line.Contains("RotationType"))
+            {
+                string[] split = line.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                particle.rotationType = int.Parse(split[1]);
+            }
+            else if (line.Contains("RotationSpeed"))
+            {
+                string[] split = line.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                particle.rotationSpeed = float.Parse(split[1]);
+            }
+            else if (line.Contains("EmittingRadius"))
+            {
+                string[] split = line.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                particle.emittingRadius = float.Parse(split[1]);
+            }
+            else if (line.Contains(" EmittingSize "))
+            {
+                string[] split = line.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                particle.emittingSize = new Vector3(float.Parse(split[1]), float.Parse(split[3]), float.Parse(split[2]));
+            }
+
+            else if (line.Contains("TimeEventScaleX"))
+            {
+                string _line = sr.ReadLine();
+            J00009: _line = sr.ReadLine();
+
+                if (!_line.Contains("}"))
+                {
+                    string[] split = _line.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                    particle.timeEventScaleX = new SerializableDictionary<float, float>();
+                    particle.timeEventScaleX.ToDictionary().Add(float.Parse(split[0]), float.Parse(split[1]));
+                    goto J00009;
+                }
+            }
+            else if (line.Contains("TimeEventScaleY"))
+            {
+                string _line = sr.ReadLine();
+            J00010: _line = sr.ReadLine();
+
+                if (!_line.Contains("}"))
+                {
+                    string[] split = _line.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                    particle.timeEventScaleY = new SerializableDictionary<float, float>();
+                    particle.timeEventScaleY.ToDictionary().Add(float.Parse(split[0]), float.Parse(split[1]));
+                    goto J00010;
+                }
+            }
+            else if (line.Contains("TimeEventColorRed"))
+            {
+                string _line = sr.ReadLine();
+            J00011: _line = sr.ReadLine();
+
+                if (!_line.Contains("}"))
+                {
+                    string[] split = _line.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                    particle.timeEventColorRed = new SerializableDictionary<float, float>();
+                    particle.timeEventColorRed.ToDictionary().Add(float.Parse(split[0]), float.Parse(split[1]));
+                    goto J00011;
+                }
+            }
+            else if (line.Contains("TimeEventColorGreen"))
+            {
+                string _line = sr.ReadLine();
+            J00012: _line = sr.ReadLine();
+
+                if (!_line.Contains("}"))
+                {
+                    string[] split = _line.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                    particle.timeEventColorGreen = new SerializableDictionary<float, float>();
+                    particle.timeEventColorGreen.ToDictionary().Add(float.Parse(split[0]), float.Parse(split[1]));
+                    goto J00012;
+                }
+            }
+            else if (line.Contains("TimeEventColorBlue"))
+            {
+                string _line = sr.ReadLine();
+            J00013: _line = sr.ReadLine();
+
+                if (!_line.Contains("}"))
+                {
+                    string[] split = _line.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                    particle.timeEventColorBlue = new SerializableDictionary<float, float>();
+                    particle.timeEventColorBlue.ToDictionary().Add(float.Parse(split[0]), float.Parse(split[1]));
+                    goto J00013;
+                }
+            }
+            else if (line.Contains("TimeEventAlpha"))
+            {
+                string _line = sr.ReadLine();
+            J00014: _line = sr.ReadLine();
+
+                if (!_line.Contains("}"))
+                {
+                    string[] split = _line.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                    particle.timeEventAlpha = new SerializableDictionary<float, float>();
+                    particle.timeEventAlpha.ToDictionary().Add(float.Parse(split[0]), float.Parse(split[1]));
+                    goto J00014;
+                }
+            }
+            else if (line.Contains("TimeEventRotation"))
+            {
+                string _line = sr.ReadLine();
+            J00015: _line = sr.ReadLine();
+
+                if (!_line.Contains("}"))
+                {
+                    string[] split = _line.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                    particle.timeEventRotation = new SerializableDictionary<float, float>();
+                    particle.timeEventRotation.ToDictionary().Add(float.Parse(split[0]), float.Parse(split[1]));
+                    goto J00015;
+                }
+            }
+            else if (line.Contains("TextureFiles"))
+            {
+                string _line = sr.ReadLine();
+                _line = sr.ReadLine().Replace(".dds", string.Empty).Replace("  ", "").Replace(@"D:\YMIR WORK\pc\sura\effect\", string.Empty).Replace(@"D:\Ymir Work\pc\sura\effect\", string.Empty).
+                    Replace(@"D:\Ymir Work\effect\monster2\", string.Empty).Replace(@"D:\Ymir Work\pc\assassin\effect\", string.Empty).Replace(@"D:\Ymir Work\effect\monster\", string.Empty).
+                    Replace(@"D:\Ymir work\effect\affect\", string.Empty).Replace(@"D:\Ymir Work\pc\shaman\effect\", string.Empty);
+                particle.textureFiles = _line.Remove(0, 1);
+                particle.textureFiles = particle.textureFiles.Remove(particle.textureFiles.Length - 1, 1);
+            }
+            #endregion
+        }
+        return particle;
+    }
+}
